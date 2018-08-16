@@ -40,23 +40,47 @@ namespace DiskHeader
                  IntPtr lpNewFilePointer, FileMove dwMoveMethod);
         }
         protected SafeFileHandle FileHandle;
+        protected readonly bool AsyncFlag;
         public bool IsInvalid => FileHandle.IsInvalid;
         public bool IsClosed => FileHandle.IsClosed;
         public IntPtr DangerousGetHandle() => FileHandle.DangerousGetHandle();
-        public DiskHeader(SafeFileHandle FileHandle)
-            => this.FileHandle = FileHandle;
-        public DiskHeader(string FilePath)
+        public DiskHeader(SafeFileHandle FileHandle, bool AsyncFlag = false)
+            =>(this.FileHandle, this.AsyncFlag) = (FileHandle, AsyncFlag);
+        public DiskHeader(string FilePath, bool AsyncFlag = false)
             : this(NativeMethods.CreateFileW(FilePath, 
                 FileAccess.Read, 
                 FileShare.ReadWrite, 
                 IntPtr.Zero, 
                 FileMode.Open, 
-                FileFlagAndAttributesExtensions.Create(FileAttributes.Normal, FileFlags.Overlapped), 
-                IntPtr.Zero)){ }
-        public static DiskHeader FromPhysicalDriveNumber(int PhysicalDriveNumber)
+                FileFlagAndAttributesExtensions.Create(FileAttributes.Normal, AsyncFlag ? FileFlags.Overlapped : default), 
+                IntPtr.Zero), AsyncFlag){ }
+        public static DiskHeader FromPhysicalDriveNumber(int PhysicalDriveNumber, bool AsyncFlag = false)
             => PhysicalDriveNumber >= 0 ?
-                new DiskHeader($@"\\.\PhysicalDrive{PhysicalDriveNumber}")
+                new DiskHeader($@"\\.\PhysicalDrive{PhysicalDriveNumber}", AsyncFlag)
                 : throw new ArgumentException($"{nameof(PhysicalDriveNumber)} は 0 以上の必要があります。",nameof(PhysicalDriveNumber));
+        public bool Read(out MBR.Header Header)
+        {
+            var Size = Marshal.SizeOf<MBR.Header>();
+            var IntPtr = Marshal.AllocCoTaskMem(Size);
+            using (Disposable.Create(() => Marshal.FreeCoTaskMem(IntPtr)))
+            {
+                bool result;
+                result = NativeMethods.SetFilePointerEx(FileHandle, 0, IntPtr.Zero, FileMove.Begin);
+                if (!result)
+                {
+                    Header = default;
+                    return result;
+                }
+                result = NativeMethods.ReadFile(FileHandle, IntPtr, (uint)Size, out var ReadBytes, IntPtr.Zero);
+                if (!result && ReadBytes == 0)
+                {
+                    Header = default;
+                    return result;
+                }
+                Header = (MBR.Header)Marshal.PtrToStructure(IntPtr, typeof(MBR.Header));
+                return result;
+            }
+        }
         public async Task<(bool Result, MBR.Header Header)> ReadAsync(CancellationToken Token = default)
         {
             var Size = Marshal.SizeOf<MBR.Header>();
