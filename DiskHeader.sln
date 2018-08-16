@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.27924.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReadHeader", "ReadHeader\ReadHeader.csproj", "{714C5AFB-640F-4B16-A1DB-C47DFFC24A59}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DiskHeader", "ReadHeader\DiskHeader.csproj", "{714C5AFB-640F-4B16-A1DB-C47DFFC24A59}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReadHeaderExample", "ReadHeaderExample\ReadHeaderExample.csproj", "{FDA4FD20-72F5-45AE-85C5-4C9C11B15513}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReadHeaderExample", "ReadHeaderExample\ReadHeaderExample.csproj", "{FDA4FD20-72F5-45AE-85C5-4C9C11B15513}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
