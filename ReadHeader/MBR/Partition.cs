@@ -5,12 +5,13 @@ namespace DiskHeader.MBR
     [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 16)]
     public readonly struct Partition
     {
+        public readonly static Partition Empty = new Partition();
         [MarshalAs(UnmanagedType.U1)]
-        public readonly BootFlag BootFlag;
-        public readonly CHS CHSStart;
-        public readonly PartitionType PartitionType;
-        public readonly CHS CHSEnd;
-        public readonly LBA LBAStart;
-        public readonly LBA LBASectorCount;
+        public readonly BootFlag Active;
+        public readonly CHS Begin;
+        public readonly PartitionType Type;
+        public readonly CHS End;
+        public readonly LBA Start;
+        public readonly LBA Length;
     }
 }

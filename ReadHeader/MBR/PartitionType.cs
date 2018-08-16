@@ -298,6 +298,10 @@
         /// <summary>
         /// Linux native partition
         /// </summary>
-        LinuxNative2 = 0x83
+        LinuxNative2 = 0x83,
+        /// <summary>
+        /// EFI
+        /// </summary>
+        EFI = 0xee,
     }
 }
