@@ -15,7 +15,7 @@ namespace DiskHeader
         /// <summary>
         /// Cylinder
         /// </summary>
-        public ushort Cylinder => (ushort)((Bit1 & 0b1111_1111u) << 2 | ((Bit2 & 0b1100_0000u) >> 6 ));
+        public ushort TrackPerCylinder => (ushort)((Bit1 & 0b1111_1111u) << 2 | ((Bit2 & 0b1100_0000u) >> 6 ));
         /// <summary>
         /// 
         /// </summary>
@@ -23,7 +23,7 @@ namespace DiskHeader
         /// <summary>
         /// 
         /// </summary>
-        public byte TrackSector => (byte)(Bit3 & 0x0011_1111u);
+        public byte Sector => (byte)(Bit3 & 0x0011_1111u);
         /// <summary>
         /// 
         /// </summary>
@@ -34,35 +34,35 @@ namespace DiskHeader
         /// <summary>
         /// 
         /// </summary>
-        /// <param name="Cylinder"></param>
+        /// <param name="TrackPerCylinder"></param>
         /// <param name="Head"></param>
-        /// <param name="TrackSector"></param>
-        public CHS(ushort Cylinder, byte Head, byte TrackSector) : this((byte)((Cylinder & 0b0000_0011_1111_1100u) >> 2), (byte)(((Cylinder & 0b0000_0000_0000_0011u) << 6) | ((Head & 0b1111_1100u) >> 2)), (byte)(((Head & 0b0000_0011u) << 6) | (TrackSector & 0b0011_1111u))) { }
+        /// <param name="Sector"></param>
+        public CHS(ushort TrackPerCylinder, byte Head, byte Sector) : this((byte)((TrackPerCylinder & 0b0000_0011_1111_1100u) >> 2), (byte)(((TrackPerCylinder & 0b0000_0000_0000_0011u) << 6) | ((Head & 0b1111_1100u) >> 2)), (byte)(((Head & 0b0000_0011u) << 6) | (Sector & 0b0011_1111u))) { }
         public CHS(IntPtr IntPtr, uint Size) => this = (CHS)Marshal.PtrToStructure(IntPtr, typeof(CHS));
         /// <summary>
         /// 
         /// </summary>
-        /// <param name="Cylinder"></param>
+        /// <param name="TrackPerCylinder"></param>
         /// <param name="Head"></param>
-        /// <param name="TrackSector"></param>
+        /// <param name="Sector"></param>
         /// <returns></returns>
-        public CHS Set(ushort? Cylinder = null, byte? Head = null, byte? TrackSector = null)
-            => Cylinder == null && Head == null && TrackSector == null ? this
-            : new CHS(Cylinder ?? this.Cylinder, Head ?? this.Head, TrackSector ?? this.TrackSector);
+        public CHS Set(ushort? TrackPerCylinder = null, byte? Head = null, byte? Sector = null)
+            => TrackPerCylinder == null && Head == null && Sector == null ? this
+            : new CHS(TrackPerCylinder ?? this.TrackPerCylinder, Head ?? this.Head, Sector ?? this.Sector);
         /// <summary>
         /// 
         /// </summary>
-        /// <param name="Cylinder"></param>
+        /// <param name="TrackPerCylinder"></param>
         /// <param name="Head"></param>
-        /// <param name="TrackSector"></param>
-        public void Deconstruct(out ushort Cylinder, out byte Head, out byte TrackSector)
-            => (Cylinder, Head, TrackSector) = (this.Cylinder, this.Head, this.TrackSector);
+        /// <param name="Sector"></param>
+        public void Deconstruct(out ushort TrackPerCylinder, out byte Head, out byte Sector)
+            => (TrackPerCylinder, Head, Sector) = (this.TrackPerCylinder, this.Head, this.Sector);
         /// <summary>
         /// 
         /// </summary>
         /// <returns></returns>
         public override string ToString()
-            => $"{nameof(CHS)}{{{nameof(Cylinder)}:{Cylinder}, {nameof(Head)}:{Head}, {nameof(TrackSector)}:{TrackSector}}}";
+            => $"{nameof(CHS)}{{{nameof(TrackPerCylinder)}:{TrackPerCylinder}, {nameof(Head)}:{Head}, {nameof(Sector)}:{Sector}}}";
         /// <summary>
         /// 
         /// </summary>
