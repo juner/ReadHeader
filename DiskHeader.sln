@@ -5,7 +5,7 @@ VisualStudioVersion = 15.0.27924.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DiskHeader", "ReadHeader\DiskHeader.csproj", "{714C5AFB-640F-4B16-A1DB-C47DFFC24A59}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ReadHeaderExample", "ReadHeaderExample\ReadHeaderExample.csproj", "{FDA4FD20-72F5-45AE-85C5-4C9C11B15513}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReadHeaderExample", "ReadHeaderExample\ReadHeaderExample.csproj", "{9B3E7519-29EA-4B2A-A992-A47528DD56BC}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -17,10 +17,10 @@ Global
 		{714C5AFB-640F-4B16-A1DB-C47DFFC24A59}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{714C5AFB-640F-4B16-A1DB-C47DFFC24A59}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{714C5AFB-640F-4B16-A1DB-C47DFFC24A59}.Release|Any CPU.Build.0 = Release|Any CPU
-		{FDA4FD20-72F5-45AE-85C5-4C9C11B15513}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{FDA4FD20-72F5-45AE-85C5-4C9C11B15513}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{FDA4FD20-72F5-45AE-85C5-4C9C11B15513}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{FDA4FD20-72F5-45AE-85C5-4C9C11B15513}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9B3E7519-29EA-4B2A-A992-A47528DD56BC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9B3E7519-29EA-4B2A-A992-A47528DD56BC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9B3E7519-29EA-4B2A-A992-A47528DD56BC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9B3E7519-29EA-4B2A-A992-A47528DD56BC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
