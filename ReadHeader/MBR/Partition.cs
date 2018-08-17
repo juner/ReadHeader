@@ -11,7 +11,7 @@ namespace DiskHeader.MBR
         public readonly CHS Begin;
         public readonly PartitionType Type;
         public readonly CHS End;
-        public readonly LBA Start;
-        public readonly LBA Length;
+        public readonly LBA4 Start;
+        public readonly LBA4 Length;
     }
 }

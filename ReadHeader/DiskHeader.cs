@@ -58,28 +58,50 @@ namespace DiskHeader
             => PhysicalDriveNumber >= 0 ?
                 new DiskHeader($@"\\.\PhysicalDrive{PhysicalDriveNumber}", AsyncFlag)
                 : throw new ArgumentException($"{nameof(PhysicalDriveNumber)} は 0 以上の必要があります。",nameof(PhysicalDriveNumber));
-        public bool Read(out MBR.Header Header)
+        private uint SectorSize = 512;
+        protected bool ReadMBR(out MBR.Header Header)
         {
             var Size = Marshal.SizeOf<MBR.Header>();
+            if (Size % SectorSize != 0)
+                Size += (int)(SectorSize - (Size % SectorSize));
             var IntPtr = Marshal.AllocCoTaskMem(Size);
             using (Disposable.Create(() => Marshal.FreeCoTaskMem(IntPtr)))
             {
-                bool result;
-                result = NativeMethods.SetFilePointerEx(FileHandle, 0, IntPtr.Zero, FileMove.Begin);
-                if (!result)
-                {
-                    Header = default;
-                    return result;
-                }
-                result = NativeMethods.ReadFile(FileHandle, IntPtr, (uint)Size, out var ReadBytes, IntPtr.Zero);
-                if (!result && ReadBytes == 0)
-                {
-                    Header = default;
-                    return result;
-                }
+                var result = NativeMethods.ReadFile(FileHandle, IntPtr, (uint)Size, out var ReadBytes, IntPtr.Zero);
                 Header = (MBR.Header)Marshal.PtrToStructure(IntPtr, typeof(MBR.Header));
                 return result;
             }
+        }
+        protected bool ReadGptHeader(out GPT.Header Header)
+        {
+            var Size = Marshal.SizeOf<GPT.Header>();
+            if (Size % SectorSize != 0)
+                Size += (int)(SectorSize - (Size % SectorSize));
+            var IntPtr = Marshal.AllocCoTaskMem(Size);
+            using (Disposable.Create(() => Marshal.FreeCoTaskMem(IntPtr)))
+            {
+                var result = NativeMethods.ReadFile(FileHandle, IntPtr, (uint)Size, out var ReturnBytes, IntPtr.Zero);
+                Header = (GPT.Header)Marshal.PtrToStructure(IntPtr, typeof(GPT.Header));
+                return result;
+            }
+        }
+        public bool Read(out IDiskHeaders Headers)
+        {
+            bool result;
+            if(!(result = NativeMethods.SetFilePointerEx(FileHandle, 0, IntPtr.Zero, FileMove.Begin)))
+            { Headers = default; return result; }
+            if (!result)
+            { Headers = default; return result; }
+            if (!(result = ReadMBR(out var MBRHeader)))
+            { Headers = default; return result; }
+            if (!MBRHeader.IsGPT)
+            { Headers = (MBR.Headers)MBRHeader; return true; }
+            if(!(result = NativeMethods.SetFilePointerEx(FileHandle, 0xff, IntPtr.Zero, FileMove.Begin)))
+            { Headers = default; return result; }
+            if (!(result = ReadGptHeader(out var GPTHeader)))
+            { Headers = default; return false; }
+            Headers = new GPT.Headers(MBRHeader, GPTHeader, default);
+            return result;
         }
         public async Task<(bool Result, MBR.Header Header)> ReadAsync(CancellationToken Token = default)
         {
