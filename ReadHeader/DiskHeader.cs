@@ -1,6 +1,7 @@
 ﻿using Microsoft.Win32.SafeHandles;
 using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,8 +37,21 @@ namespace DiskHeader
             public static extern bool CancelIoEx(SafeFileHandle hFile, IntPtr lpOverlapped = default);
             [DllImport("kernel32.dll")]
             public static extern bool SetFilePointerEx(
-                 SafeFileHandle hFile, long liDistanceToMove,
-                 IntPtr lpNewFilePointer, FileMove dwMoveMethod);
+                 SafeFileHandle File, long DistanceToMove,
+                 IntPtr NewFilePointer = default, FileMove MoveMethod = default);
+            [DllImport("kernel32.dll", SetLastError = true,
+                CharSet = CharSet.Auto)]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            public static extern bool DeviceIoControl(
+                SafeFileHandle hDevice,
+                IOControlCode IoControlCode,
+                IntPtr InBuffer,
+                uint nInBufferSize,
+                IntPtr OutBuffer,
+                uint nOutBufferSize,
+                out uint BytesReturned,
+                IntPtr Overlapped = default
+            );
         }
         protected SafeFileHandle FileHandle;
         protected readonly bool AsyncFlag;
@@ -45,21 +59,30 @@ namespace DiskHeader
         public bool IsClosed => FileHandle.IsClosed;
         public IntPtr DangerousGetHandle() => FileHandle.DangerousGetHandle();
         public DiskHeader(SafeFileHandle FileHandle, bool AsyncFlag = false)
-            =>(this.FileHandle, this.AsyncFlag) = (FileHandle, AsyncFlag);
+            => (this.FileHandle, this.AsyncFlag) = (FileHandle, AsyncFlag);
         public DiskHeader(string FilePath, bool AsyncFlag = false)
-            : this(NativeMethods.CreateFileW(FilePath, 
-                FileAccess.Read, 
-                FileShare.ReadWrite, 
-                IntPtr.Zero, 
-                FileMode.Open, 
-                FileFlagAndAttributesExtensions.Create(FileAttributes.Normal, AsyncFlag ? FileFlags.Overlapped : default), 
-                IntPtr.Zero), AsyncFlag){ }
+            : this(NativeMethods.CreateFileW(FilePath,
+                FileAccess.Read,
+                FileShare.ReadWrite,
+                IntPtr.Zero,
+                FileMode.Open,
+                FileFlagAndAttributesExtensions.Create(FileAttributes.Normal, AsyncFlag ? FileFlags.Overlapped : default),
+                IntPtr.Zero), AsyncFlag) { }
         public static DiskHeader FromPhysicalDriveNumber(int PhysicalDriveNumber, bool AsyncFlag = false)
             => PhysicalDriveNumber >= 0 ?
                 new DiskHeader($@"\\.\PhysicalDrive{PhysicalDriveNumber}", AsyncFlag)
-                : throw new ArgumentException($"{nameof(PhysicalDriveNumber)} は 0 以上の必要があります。",nameof(PhysicalDriveNumber));
-        private uint SectorSize = 512;
-        protected bool ReadMBR(out MBR.Header Header)
+                : throw new ArgumentException($"{nameof(PhysicalDriveNumber)} は 0 以上の必要があります。", nameof(PhysicalDriveNumber));
+        internal bool GetDiskGeometry(out DiskGeometry DiskGeometry, out uint ReturnBytes)
+        {
+            var Size = Marshal.SizeOf<DiskGeometry>();
+            var Ptr = Marshal.AllocCoTaskMem(Size);
+            bool Result;
+            using (Disposable.Create(() => Marshal.FreeCoTaskMem(Ptr)))
+                DiskGeometry = (Result = NativeMethods.DeviceIoControl(FileHandle, IOControlCode.DiskGetDriveGeometry, IntPtr.Zero, 0, Ptr, (uint)Size, out ReturnBytes)) && ReturnBytes > 0
+                    ? new DiskGeometry(Ptr, ReturnBytes) : default;
+            return Result;
+        }
+        protected bool ReadMBR(uint SectorSize, out MBR.Header Header)
         {
             var Size = Marshal.SizeOf<MBR.Header>();
             if (Size % SectorSize != 0)
@@ -68,11 +91,11 @@ namespace DiskHeader
             using (Disposable.Create(() => Marshal.FreeCoTaskMem(IntPtr)))
             {
                 var result = NativeMethods.ReadFile(FileHandle, IntPtr, (uint)Size, out var ReadBytes, IntPtr.Zero);
-                Header = (MBR.Header)Marshal.PtrToStructure(IntPtr, typeof(MBR.Header));
+                Header = new MBR.Header(IntPtr, ReadBytes);
                 return result;
             }
         }
-        protected bool ReadGptHeader(out GPT.Header Header)
+        protected bool ReadGptHeader(uint SectorSize, out GPT.Header Header)
         {
             var Size = Marshal.SizeOf<GPT.Header>();
             if (Size % SectorSize != 0)
@@ -80,27 +103,58 @@ namespace DiskHeader
             var IntPtr = Marshal.AllocCoTaskMem(Size);
             using (Disposable.Create(() => Marshal.FreeCoTaskMem(IntPtr)))
             {
-                var result = NativeMethods.ReadFile(FileHandle, IntPtr, (uint)Size, out var ReturnBytes, IntPtr.Zero);
-                Header = (GPT.Header)Marshal.PtrToStructure(IntPtr, typeof(GPT.Header));
+                var result = NativeMethods.ReadFile(FileHandle, IntPtr, (uint)Size, out var ReadBytes, IntPtr.Zero);
+                Header = new GPT.Header(IntPtr, ReadBytes);
+                return result;
+            }
+        }
+        protected bool ReadGptPartitions(uint SectorSize, in GPT.Header Header, out GPT.Partition[] Partitions)
+        {
+            var ElementSize = Header.SizeOfSinglePartitionEntry;
+            if (ElementSize % SectorSize != 0)
+                ElementSize += SectorSize - (ElementSize % SectorSize);
+            var ArraySize = ElementSize * Header.NumberOfPartitionCount;
+            var IntPtr = Marshal.AllocCoTaskMem((int)ArraySize);
+            using (Disposable.Create(() => Marshal.FreeCoTaskMem(IntPtr)))
+            {
+                var result = NativeMethods.ReadFile(FileHandle, IntPtr, ArraySize, out var ReadBytes, IntPtr.Zero);
+                Partitions = Enumerable.Range(0, (int)Header.NumberOfPartitionCount)
+                    .Select(index => new GPT.Partition(IntPtr.Add(IntPtr, (int)ElementSize * index), ReadBytes - (uint)(ElementSize * index)))
+                    .ToArray();
                 return result;
             }
         }
         public bool Read(out IDiskHeaders Headers)
         {
             bool result;
-            if(!(result = NativeMethods.SetFilePointerEx(FileHandle, 0, IntPtr.Zero, FileMove.Begin)))
-            { Headers = default; return result; }
-            if (!result)
-            { Headers = default; return result; }
-            if (!(result = ReadMBR(out var MBRHeader)))
-            { Headers = default; return result; }
-            if (!MBRHeader.IsGPT)
-            { Headers = (MBR.Headers)MBRHeader; return true; }
-            if(!(result = NativeMethods.SetFilePointerEx(FileHandle, 0xff, IntPtr.Zero, FileMove.Begin)))
-            { Headers = default; return result; }
-            if (!(result = ReadGptHeader(out var GPTHeader)))
-            { Headers = default; return false; }
-            Headers = new GPT.Headers(MBRHeader, GPTHeader, default);
+            do
+            {
+                if (!(result = GetDiskGeometry(out var Geometry, out _)))
+                    break;
+                var SectorSize = Geometry.BytesPerSector;
+                // Set LBA 0
+                if (!(result = NativeMethods.SetFilePointerEx(FileHandle, 0, MoveMethod: FileMove.Begin)))
+                    break;
+                if (!(result = ReadMBR(SectorSize, out var MBRHeader)))
+                    break;
+                if (!MBRHeader.IsGPT)
+                {
+                    Headers = (MBR.Headers)MBRHeader;
+                    return true;
+                }
+                // Set LBA 1
+                if (!(result = NativeMethods.SetFilePointerEx(FileHandle, SectorSize, MoveMethod: FileMove.Begin)))
+                    break;
+                if (!(result = ReadGptHeader(SectorSize, out var GPTHeader)))
+                    break;
+                if (!(result = NativeMethods.SetFilePointerEx(FileHandle, SectorSize * (uint)GPTHeader.PartitionEntries, MoveMethod: FileMove.Begin)))
+                    break;
+                if (!(result = ReadGptPartitions(SectorSize, GPTHeader, out var GptPartitions)))
+                    break;
+                Headers = new GPT.Headers(MBRHeader, GPTHeader, GptPartitions);
+                return result;
+            } while (false);
+            Headers = default;
             return result;
         }
         public async Task<(bool Result, MBR.Header Header)> ReadAsync(CancellationToken Token = default)

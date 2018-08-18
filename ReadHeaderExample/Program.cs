@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace ReadHeaderExample
@@ -7,13 +8,14 @@ namespace ReadHeaderExample
     {
         static void Main(string[] args)
         {
+            Trace.Listeners.Add(new TextWriterTraceListener(Console.Out));
             using (var reader = DiskHeader.DiskHeader.FromPhysicalDriveNumber(0))
             {
                 if (reader.IsInvalid)
                     Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
                 if(reader.Read(out var Header))
                 {
-                    Console.WriteLine(Header);
+                    Trace.WriteLine(Header);
                 }
                 else
                 {

@@ -31,6 +31,7 @@ namespace DiskHeader.MBR
         public Header(byte[] MasterBootStrapLoader, Partition[] PartitionTable, MBRSignature Signature)
             => (this._MasterBootStrapLoader, this._PartitionTable, this.Signature)
             = ((MasterBootStrapLoader?? Enumerable.Repeat((byte)0x00,446)).ToArray(), (PartitionTable ?? Enumerable.Repeat(new Partition(),4)).ToArray(), Signature);
+        public Header(IntPtr IntPtr, uint Size) => this = (Header)Marshal.PtrToStructure(IntPtr, typeof(Header));
         public bool IsValidSignature => Signature == MBRSignature.MagicNumber;
         public bool IsGPT => PartitionTable.Any(v => v.Type == PartitionType.EFI);
         public override string ToString()
