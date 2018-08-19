@@ -107,13 +107,26 @@ namespace DiskHeader
             Event = _Event;
             return Dispose;
         }
+        internal bool DeviceIoControl(IOControlCode IoControlCode, IntPtr InPtr, uint InSize, IntPtr OutPtr, uint OutSize, out uint ReturnBytes) => NativeMethods.DeviceIoControl(FileHandle, IoControlCode, InPtr, InSize, OutPtr, OutSize, out ReturnBytes, IntPtr.Zero);
         internal bool GetDiskGeometry(out DiskGeometry DiskGeometry, out uint ReturnBytes)
         {
             bool Result;
             using (CreatePtr<DiskGeometry>(out var Ptr, out var Size))
-                DiskGeometry = (Result = NativeMethods.DeviceIoControl(FileHandle, IOControlCode.DiskGetDriveGeometry, IntPtr.Zero, 0, Ptr, (uint)Size, out ReturnBytes)) && ReturnBytes > 0
+                DiskGeometry = (Result = DeviceIoControl(IOControlCode.DiskGetDriveGeometry, IntPtr.Zero, 0, Ptr, Size, out ReturnBytes)) && ReturnBytes > 0
                     ? new DiskGeometry(Ptr, ReturnBytes) : default;
             return Result;
+        }
+        internal async Task<(bool Result, uint ReturnBytes)> DeviceIoControlAsync(IOControlCode IoControlCode, IntPtr InPtr, uint InSize, IntPtr OutPtr, uint OutSize, CancellationToken Token = default)
+        {
+            bool Result;
+            using (CreateOverlappedAndEvent(out var overlapped, out var Event))
+            {
+                Result = NativeMethods.DeviceIoControl(FileHandle, IoControlCode, InPtr, InSize, OutPtr, OutSize, out _, overlapped.GlobalOverlapped);
+                using (Token.Register(() => NativeMethods.CancelIoEx(FileHandle, overlapped.GlobalOverlapped)))
+                    Result = await Event.WaitOneAsync(Token);
+                return (NativeMethods.GetOverlappedResult(FileHandle, overlapped, out var ReturnBytes, false), ReturnBytes);
+                
+            }
         }
         
         internal async Task<DiskGeometry?> GetDiskGeometryAsync(CancellationToken Token = default)
@@ -133,15 +146,18 @@ namespace DiskHeader
         protected bool ReadFile(IntPtr IntPtr, uint Size, out uint ReadBytes) => NativeMethods.ReadFile(FileHandle, IntPtr, Size, out ReadBytes);
         protected async Task<(bool Result, uint ReadBytes)> ReadFileAsync(IntPtr IntPtr, uint Size, CancellationToken Token = default)
         {
+            const int TASK_SEQUENCE_ERROR = unchecked((int)0x800703E5);
             Token.ThrowIfCancellationRequested();
             using (CreateOverlappedAndEvent(out var overlapped, out var Event))
             {
                 bool Result;
-                Result = NativeMethods.ReadFile(FileHandle, IntPtr, Size, out var ReadBytes, overlapped.GlobalOverlapped);
+                Result = NativeMethods.ReadFile(FileHandle, IntPtr, Size, out _, overlapped.GlobalOverlapped);
+                if (!Result && Marshal.GetHRForLastWin32Error() != TASK_SEQUENCE_ERROR)
+                    return (Result, 0);
                 using (Token.Register(() => NativeMethods.CancelIoEx(FileHandle, overlapped.GlobalOverlapped)))
                     await Event.WaitOneAsync(Token);
-                Result = NativeMethods.GetOverlappedResult(FileHandle, overlapped, out var _ReadBytes, false);
-                return (Result, _ReadBytes);
+                Result = NativeMethods.GetOverlappedResult(FileHandle, overlapped, out var ReadBytes, false);
+                return (Result, ReadBytes);
             }
         }
         internal bool SetFilePointer(long DitanceToMove, FileMove MoveMethod) => NativeMethods.SetFilePointerEx(FileHandle, DitanceToMove, IntPtr.Zero, MoveMethod);
@@ -157,17 +173,17 @@ namespace DiskHeader
         protected async Task<MBR.Header?> ReadMBRAsync(CancellationToken Token = default)
         {
             Token.ThrowIfCancellationRequested();
-            using (CreatePtr<MBR.Header>(SectorSize, out var IntPtr, out var Size))
+            using (CreatePtr(SectorSize, out var IntPtr))
             {
-                var (Result,ReadBytes) = await ReadFileAsync(IntPtr, Size, Token);
+                var (Result,ReadBytes) = await ReadFileAsync(IntPtr, SectorSize, Token);
                 return Result ? new MBR.Header(IntPtr, ReadBytes) : (MBR.Header?)null;
             }
         }
         protected bool ReadGptHeader(out GPT.Header Header)
         {
-            using (CreatePtr<GPT.Header>(SectorSize, out var IntPtr, out var Size))
+            using (CreatePtr(SectorSize, out var IntPtr))
             {
-                var result = ReadFile(IntPtr, Size, out var ReadBytes);
+                var result = ReadFile(IntPtr, SectorSize, out var ReadBytes);
                 Header = new GPT.Header(IntPtr, ReadBytes);
                 return result;
             }
@@ -175,23 +191,10 @@ namespace DiskHeader
         protected async Task<GPT.Header?> ReadGptHeaderAsync(CancellationToken Token = default)
         {
             Token.ThrowIfCancellationRequested();
-            using (CreatePtr<GPT.Header>(SectorSize, out var IntPtr, out var Size))
+            using (CreatePtr(SectorSize, out var IntPtr))
             {
-                var (Result, ReadBytes) = await ReadFileAsync(IntPtr, Size);
-                return Result ? new GPT.Header(IntPtr, ReadBytes) : (GPT.Header?)null;
-            }
-        }
-        protected bool ReadGptPartitions(in GPT.Header Header, out GPT.Partition[] Partitions)
-        {
-            var ElementSize = Header.SizeOfSinglePartitionEntry;
-            var ArraySize = AdjustBySectorSize(ref ElementSize) * Header.NumberOfPartitionCount;
-            using (CreatePtr(ArraySize, out var IntPtr))
-            {
-                var result = NativeMethods.ReadFile(FileHandle, IntPtr, ArraySize, out var ReadBytes, IntPtr.Zero);
-                Partitions = Enumerable.Range(0, (int)Header.NumberOfPartitionCount)
-                    .Select(index => new GPT.Partition(IntPtr.Add(IntPtr, (int)ElementSize * index), ReadBytes - (uint)(ElementSize * index)))
-                    .ToArray();
-                return result;
+                var (Result, ReadBytes) = await ReadFileAsync(IntPtr, SectorSize, Token);
+                return !Result ? (GPT.Header?)null : new GPT.Header(IntPtr, SectorSize < ReadBytes ? SectorSize : ReadBytes);
             }
         }
         protected bool ReadGptPartitionsBySector(out GPT.Partition[] Partitions)
@@ -201,9 +204,20 @@ namespace DiskHeader
                 var result = ReadFile(IntPtr, SectorSize, out var ReadBytes);
                 var PartitionSize = Marshal.SizeOf<GPT.Partition>();
                 Partitions = Enumerable.Range(0, (int)(SectorSize / PartitionSize))
-                    .Select(index => new GPT.Partition(IntPtr.Add(IntPtr, PartitionSize * index), ReadBytes))
+                    .Select(index => new GPT.Partition(IntPtr.Add(IntPtr, PartitionSize * index), ReadBytes - (uint)(PartitionSize * index)))
                     .ToArray();
                 return result;
+            }
+        }
+        protected async Task<GPT.Partition[]> ReadGptPartitionsBySectorAsync(CancellationToken Token = default)
+        {
+            using (CreatePtr(SectorSize, out var IntPtr))
+            {
+                var (Result, ReadBytes) = await ReadFileAsync(IntPtr, SectorSize, Token);
+                var PartitionSize = Marshal.SizeOf<GPT.Partition>();
+                return !Result ? null : Enumerable.Range(0, (int)(SectorSize / PartitionSize))
+                    .Select(index => new GPT.Partition(IntPtr.Add(IntPtr, PartitionSize * index), (SectorSize < ReadBytes ? SectorSize : ReadBytes) - (uint)(PartitionSize * index)))
+                    .ToArray();
             }
         }
 
