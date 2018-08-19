@@ -82,6 +82,20 @@ namespace DiskHeader
         /// <summary>
         /// 
         /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        public static bool operator ==(CHS a, CHS b) => a.Equals(b);
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="a"></param>
+        /// <param name="b"></param>
+        /// <returns></returns>
+        public static bool operator !=(CHS a, CHS b) => !a.Equals(b);
+        /// <summary>
+        /// 
+        /// </summary>
         /// <returns></returns>
         public override int GetHashCode()
         {

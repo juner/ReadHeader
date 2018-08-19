@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -6,8 +7,9 @@ using System.Text;
 namespace DiskHeader.GPT
 {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public readonly struct Partition
+    public readonly struct Partition : IEquatable<Partition>
     {
+        public static Partition Empty = new Partition();
         /// <summary>
         /// offset 0x00 length 16 bytes: Partition type GUID 
         /// </summary>
@@ -33,7 +35,7 @@ namespace DiskHeader.GPT
         /// <summary>
         /// offset 0x38 length 72 bytes: Partition name (36 UTF-16LE code units) 
         /// </summary>
-        public string Name => Encoding.Unicode.GetString((_Name ?? Enumerable.Empty<ushort>()).SelectMany(v => BitConverter.GetBytes(v)).ToArray()).TrimEnd('\0');
+        public string Name => Encoding.Unicode.GetString((_Name ?? Enumerable.Empty<ushort>()).TakeWhile(v => v != '\0').SelectMany(v => BitConverter.GetBytes(v)).ToArray()).TrimEnd('\0');
         /// <summary>
         /// 
         /// </summary>
@@ -52,11 +54,44 @@ namespace DiskHeader.GPT
         /// <param name="IntPtr"></param>
         /// <param name="Size"></param>
         public Partition(IntPtr IntPtr, uint Size) => this = (Partition)Marshal.PtrToStructure(IntPtr, typeof(Partition));
+        public bool IsEmpty => Type == Guid.Empty && PartitionId == Guid.Empty;
         /// <summary>
         /// 
         /// </summary>
         /// <returns></returns>
         public override string ToString()
-            => $"{nameof(Partition)}{{{nameof(Type)}:{Type}, {nameof(PartitionId)}:{PartitionId}, {nameof(First)}:{First}, {nameof(Last)}:{Last}, {nameof(AttributeFlags)}:{AttributeFlags}, {nameof(Name)}:{Name}}}";
+            => $"{nameof(Partition)}{{{(IsEmpty ? "Empty" : $"{nameof(Type)}:{Type}, {nameof(PartitionId)}:{PartitionId}, {nameof(First)}:{First}, {nameof(Last)}:{Last}, {nameof(AttributeFlags)}:{AttributeFlags}, {nameof(Name)}:{Name}")}}}";
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="obj"></param>
+        /// <returns></returns>
+        public override bool Equals(object obj) => obj is Partition _obj && Equals(_obj);
+
+        public bool Equals(Partition other)
+        {
+            return Type.Equals(other.Type) &&
+                   PartitionId.Equals(other.PartitionId) &&
+                   First.Equals(other.First) &&
+                   Last.Equals(other.Last) &&
+                   AttributeFlags == other.AttributeFlags &&
+                   EqualityComparer<ushort[]>.Default.Equals(_Name, other._Name);
+        }
+
+        public override int GetHashCode()
+        {
+            var hashCode = -665036890;
+            hashCode = hashCode * -1521134295 + EqualityComparer<Guid>.Default.GetHashCode(Type);
+            hashCode = hashCode * -1521134295 + EqualityComparer<Guid>.Default.GetHashCode(PartitionId);
+            hashCode = hashCode * -1521134295 + EqualityComparer<LBA8>.Default.GetHashCode(First);
+            hashCode = hashCode * -1521134295 + EqualityComparer<LBA8>.Default.GetHashCode(Last);
+            hashCode = hashCode * -1521134295 + AttributeFlags.GetHashCode();
+            hashCode = hashCode * -1521134295 + EqualityComparer<ushort[]>.Default.GetHashCode(_Name);
+            return hashCode;
+        }
+
+        public static bool operator ==(Partition partition1, Partition partition2) => partition1.Equals(partition2);
+
+        public static bool operator !=(Partition partition1, Partition partition2) => !(partition1 == partition2);
     }
 }

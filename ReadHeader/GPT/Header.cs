@@ -73,10 +73,12 @@ namespace DiskHeader.GPT
         public Header(IntPtr IntPtr, uint Size)
         {
             this = (Header)Marshal.PtrToStructure(IntPtr, typeof(Header));
+            if (Signature == 0)
+                return;
             Reserved2 = new byte[Size - this.Size];
             Marshal.Copy(IntPtr.Add(IntPtr, (int)Marshal.OffsetOf<Header>(nameof(Reserved2))), Reserved2, 0, Reserved2.Length);
         }
         public override string ToString()
-            => $"{nameof(Header)}{{{nameof(Signature)}:{string.Join(string.Empty, BitConverter.GetBytes(Signature).Select(Convert.ToChar))}, {nameof(Revision)}:{Revision}, {nameof(Size)}:{Size}, {nameof(CRC32)}:0x{CRC32:X4}, {nameof(Reserved)}:0x{Reserved:X4}, {nameof(Current)}:{Current}, {nameof(Backup)}:{Backup}, {nameof(First)}:{First}, {nameof(Last)}:{Last}, {nameof(DiskId)}:{DiskId}, {nameof(PartitionEntries)}:{PartitionEntries}, {nameof(NumberOfPartitionCount)}:{NumberOfPartitionCount}, {nameof(SizeOfSinglePartitionEntry)}:{SizeOfSinglePartitionEntry}, {nameof(PartitionCRC32)}:{PartitionCRC32}, {nameof(Reserved2)}:[{string.Join(" ", Reserved2.Select(v => $"{v:X2}"))}]}}";
+            => $"{nameof(Header)}{{{nameof(Signature)}:{(Signature == 0 ? "" : string.Join(string.Empty, BitConverter.GetBytes(Signature).Select(Convert.ToChar)))}, {nameof(Revision)}:{Revision}, {nameof(Size)}:{Size}, {nameof(CRC32)}:0x{CRC32:X4}, {nameof(Reserved)}:0x{Reserved:X4}, {nameof(Current)}:{Current}, {nameof(Backup)}:{Backup}, {nameof(First)}:{First}, {nameof(Last)}:{Last}, {nameof(DiskId)}:{DiskId}, {nameof(PartitionEntries)}:{PartitionEntries}, {nameof(NumberOfPartitionCount)}:{NumberOfPartitionCount}, {nameof(SizeOfSinglePartitionEntry)}:{SizeOfSinglePartitionEntry}, {nameof(PartitionCRC32)}:{PartitionCRC32}, {nameof(Reserved2)}:[{string.Join(" ", Reserved2.Select(v => $"{v:X2}"))}]}}";
     }
 }

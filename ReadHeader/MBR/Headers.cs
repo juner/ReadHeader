@@ -11,5 +11,7 @@ namespace DiskHeader.MBR
         private Headers(Header Mbr) => this.Mbr = Mbr;
         public static implicit operator Header(in Headers headers) => headers.Mbr;
         public static explicit operator Headers(in Header header) => new Headers(header);
+        public override string ToString()
+            => $"{nameof(Headers)}:{{{nameof(Mbr)}:{Mbr}}}";
     }
 }

@@ -35,6 +35,6 @@ namespace DiskHeader.MBR
         public bool IsValidSignature => Signature == MBRSignature.MagicNumber;
         public bool IsGPT => PartitionTable.Any(v => v.Type == PartitionType.EFI);
         public override string ToString()
-            => $"{nameof(Header)}{{{nameof(MasterBootStrapLoader)}:[{string.Join(" ", MasterBootStrapLoader.Select(v => $"{v:X2}"))}], }}";
+            => $"{nameof(Header)}{{{nameof(MasterBootStrapLoader)}:[{string.Join(" ", MasterBootStrapLoader.Select(v => $"{v:X2}"))}], {nameof(PartitionTable)}:[{string.Join(", ",PartitionTable)}], {nameof(Signature)}:{Signature}}}";
     }
 }
