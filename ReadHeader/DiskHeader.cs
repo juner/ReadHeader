@@ -54,12 +54,16 @@ namespace DiskHeader
             );
         }
         protected SafeFileHandle FileHandle;
-        protected uint SectorSize;
-        protected readonly bool AsyncFlag;
+        public readonly string FilePath = null;
+        public readonly bool? AsyncFlag;
         public bool IsInvalid => FileHandle.IsInvalid;
         public bool IsClosed => FileHandle.IsClosed;
         public IntPtr DangerousGetHandle() => FileHandle.DangerousGetHandle();
-        public DiskHeader(SafeFileHandle FileHandle, bool AsyncFlag = false)
+        public uint? SectorSize { get; protected set; }
+        public IDiskHeaders Headers { get; protected set; }
+        public override string ToString()
+            => $"{nameof(DiskHeader)}{{{(string.IsNullOrWhiteSpace(FilePath) ? "" : $"{nameof(FilePath)}:{FilePath}, ")}{(AsyncFlag == null ? "" : $"{nameof(AsyncFlag)}:{AsyncFlag}, ")}{nameof(IsInvalid)}:{IsInvalid}, {nameof(IsClosed)}:{IsClosed}{(SectorSize == null ? "" : $", {nameof(SectorSize)}:{SectorSize}")}{(Headers == null ? "" : $", {nameof(Headers)}:{Headers}")}}}";
+        public DiskHeader(SafeFileHandle FileHandle, bool? AsyncFlag = null)
             => (this.FileHandle, this.AsyncFlag) = (FileHandle, AsyncFlag);
         public DiskHeader(string FilePath, bool AsyncFlag = false)
             : this(NativeMethods.CreateFileW(FilePath,
@@ -68,7 +72,8 @@ namespace DiskHeader
                 IntPtr.Zero,
                 FileMode.Open,
                 FileFlagAndAttributesExtensions.Create(FileAttributes.Normal, AsyncFlag ? FileFlags.Overlapped : default),
-                IntPtr.Zero), AsyncFlag) { }
+                IntPtr.Zero), AsyncFlag)
+            => this.FilePath = FilePath;
         public static DiskHeader FromPhysicalDriveNumber(int PhysicalDriveNumber, bool AsyncFlag = false)
             => PhysicalDriveNumber >= 0 ?
                 new DiskHeader($@"\\.\PhysicalDrive{PhysicalDriveNumber}", AsyncFlag)
@@ -86,7 +91,7 @@ namespace DiskHeader
             return Dispose;
         }
         protected static uint AdjustBySectorSize(uint SectorSize, ref uint Size) => Size = Size + (Size % SectorSize != 0 ? SectorSize - (Size % SectorSize) : 0u);
-        protected uint AdjustBySectorSize(ref uint Size) => AdjustBySectorSize(SectorSize, ref Size);
+        protected uint AdjustBySectorSize(ref uint Size) => AdjustBySectorSize(SectorSize.Value, ref Size);
         protected static IDisposable CreatePtr(uint SectorSize, ref uint Size, out IntPtr IntPtr) => CreatePtr(AdjustBySectorSize(SectorSize, ref Size), out IntPtr);
         protected static IDisposable CreatePtr<T>(uint SectorSize, out IntPtr IntPtr, out uint Size)
         {
@@ -163,7 +168,7 @@ namespace DiskHeader
         internal bool SetFilePointer(long DitanceToMove, FileMove MoveMethod) => NativeMethods.SetFilePointerEx(FileHandle, DitanceToMove, IntPtr.Zero, MoveMethod);
         protected bool ReadMBR(out MBR.Header Header)
         {
-            using (CreatePtr<MBR.Header>(SectorSize, out var IntPtr, out var Size))
+            using (CreatePtr<MBR.Header>(SectorSize.Value, out var IntPtr, out var Size))
             {
                 var result = ReadFile(IntPtr, Size, out var ReadBytes);
                 Header = new MBR.Header(IntPtr, ReadBytes);
@@ -173,17 +178,17 @@ namespace DiskHeader
         protected async Task<MBR.Header?> ReadMBRAsync(CancellationToken Token = default)
         {
             Token.ThrowIfCancellationRequested();
-            using (CreatePtr(SectorSize, out var IntPtr))
+            using (CreatePtr(SectorSize.Value, out var IntPtr))
             {
-                var (Result,ReadBytes) = await ReadFileAsync(IntPtr, SectorSize, Token);
+                var (Result,ReadBytes) = await ReadFileAsync(IntPtr, SectorSize.Value, Token);
                 return Result ? new MBR.Header(IntPtr, ReadBytes) : (MBR.Header?)null;
             }
         }
         protected bool ReadGptHeader(out GPT.Header Header)
         {
-            using (CreatePtr(SectorSize, out var IntPtr))
+            using (CreatePtr(SectorSize.Value, out var IntPtr))
             {
-                var result = ReadFile(IntPtr, SectorSize, out var ReadBytes);
+                var result = ReadFile(IntPtr, SectorSize.Value, out var ReadBytes);
                 Header = new GPT.Header(IntPtr, ReadBytes);
                 return result;
             }
@@ -191,17 +196,17 @@ namespace DiskHeader
         protected async Task<GPT.Header?> ReadGptHeaderAsync(CancellationToken Token = default)
         {
             Token.ThrowIfCancellationRequested();
-            using (CreatePtr(SectorSize, out var IntPtr))
+            using (CreatePtr(SectorSize.Value, out var IntPtr))
             {
-                var (Result, ReadBytes) = await ReadFileAsync(IntPtr, SectorSize, Token);
-                return !Result ? (GPT.Header?)null : new GPT.Header(IntPtr, SectorSize < ReadBytes ? SectorSize : ReadBytes);
+                var (Result, ReadBytes) = await ReadFileAsync(IntPtr, SectorSize.Value, Token);
+                return !Result ? (GPT.Header?)null : new GPT.Header(IntPtr, SectorSize.Value < ReadBytes ? SectorSize.Value : ReadBytes);
             }
         }
         protected bool ReadGptPartitionsBySector(out GPT.Partition[] Partitions)
         {
-            using (CreatePtr(SectorSize, out var IntPtr))
+            using (CreatePtr(SectorSize.Value, out var IntPtr))
             {
-                var result = ReadFile(IntPtr, SectorSize, out var ReadBytes);
+                var result = ReadFile(IntPtr, SectorSize.Value, out var ReadBytes);
                 var PartitionSize = Marshal.SizeOf<GPT.Partition>();
                 Partitions = Enumerable.Range(0, (int)(SectorSize / PartitionSize))
                     .Select(index => new GPT.Partition(IntPtr.Add(IntPtr, PartitionSize * index), ReadBytes - (uint)(PartitionSize * index)))
@@ -211,12 +216,12 @@ namespace DiskHeader
         }
         protected async Task<GPT.Partition[]> ReadGptPartitionsBySectorAsync(CancellationToken Token = default)
         {
-            using (CreatePtr(SectorSize, out var IntPtr))
+            using (CreatePtr(SectorSize.Value, out var IntPtr))
             {
-                var (Result, ReadBytes) = await ReadFileAsync(IntPtr, SectorSize, Token);
+                var (Result, ReadBytes) = await ReadFileAsync(IntPtr, SectorSize.Value, Token);
                 var PartitionSize = Marshal.SizeOf<GPT.Partition>();
                 return !Result ? null : Enumerable.Range(0, (int)(SectorSize / PartitionSize))
-                    .Select(index => new GPT.Partition(IntPtr.Add(IntPtr, PartitionSize * index), (SectorSize < ReadBytes ? SectorSize : ReadBytes) - (uint)(PartitionSize * index)))
+                    .Select(index => new GPT.Partition(IntPtr.Add(IntPtr, PartitionSize * index), (SectorSize.Value < ReadBytes ? SectorSize.Value : ReadBytes) - (uint)(PartitionSize * index)))
                     .ToArray();
             }
         }
@@ -235,11 +240,11 @@ namespace DiskHeader
                     break;
                 if (!MBRHeader.IsGPT)
                 {
-                    Headers = (MBR.Headers)MBRHeader;
+                    this.Headers = Headers = (MBR.Headers)MBRHeader;
                     return true;
                 }
                 // Set LBA 1
-                if (!SetFilePointer(SectorSize, FileMove.Begin))
+                if (!SetFilePointer(SectorSize.Value, FileMove.Begin))
                     break;
                 if (!ReadGptHeader(out var GPTHeader))
                     break;
@@ -248,17 +253,17 @@ namespace DiskHeader
                 var SectorsCount = (int)(SectorSize / PartitionSize);
                 foreach(var sectorLine in Enumerable.Range(0, (int)(GPTHeader.NumberOfPartitionCount / SectorsCount)))
                 {
-                    if (!SetFilePointer(SectorSize * ((uint)GPTHeader.PartitionEntries + sectorLine), FileMove.Begin))
+                    if (!SetFilePointer(SectorSize.Value * ((uint)GPTHeader.PartitionEntries + sectorLine), FileMove.Begin))
                         break;
                     if (!ReadGptPartitionsBySector(out var Partition))
                         break;
                     foreach(var index in Enumerable.Range(sectorLine * SectorsCount, SectorsCount))
                         GptPartitions[index] = Partition[index % SectorsCount];
                 }
-                Headers = new GPT.Headers(MBRHeader, GPTHeader, GptPartitions);
+                this.Headers = Headers = new GPT.Headers(MBRHeader, GPTHeader, GptPartitions);
                 return true;
             } while (false);
-            Headers = default;
+            this.Headers = Headers = default;
             return false;
         }
         public async Task<IDiskHeaders> ReadAsync(CancellationToken Token = default)
@@ -273,15 +278,15 @@ namespace DiskHeader
                 if (!(await ReadMBRAsync(Token) is MBR.Header MBRHeader))
                     break;
                 if (!MBRHeader.IsGPT)
-                    return (MBR.Headers)MBRHeader;
+                    return Headers = (MBR.Headers)MBRHeader;
                 // Set LBA 1
-                if (!SetFilePointer(SectorSize, FileMove.Begin))
+                if (!SetFilePointer(SectorSize.Value, FileMove.Begin))
                     break;
                 if (!(await ReadGptHeaderAsync(Token) is GPT.Header GPTHeader))
                     break;
-                return new GPT.Headers(MBRHeader, GPTHeader, default);
+                return Headers = new GPT.Headers(MBRHeader, GPTHeader, default);
             } while (false);
-            return default;
+            return this.Headers = default;
                 
         }
         #region IDisposable Support
